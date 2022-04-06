@@ -1,0 +1,13 @@
+{
+    "apiport":9001,
+	"mongo":"mongodb://root:example@1.2.3.4:27017",
+	"mongodb":"",
+	"btcfullnode": {
+		"address": "127.0.0.1:8443",
+		"user": "admin",
+		"pass": "admin",
+		"https": false
+	},
+	"blockchainfee":"http://127.0.0.1:9001",
+	"net": "main"
+}
