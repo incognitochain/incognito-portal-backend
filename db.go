@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"time"
 
 	"github.com/kamva/mgm/v3"
@@ -23,7 +22,20 @@ func connectDB() error {
 	if err != nil {
 		return err
 	}
-	log.Println("Database Connected!")
+	logger.Println("Database Connected!")
+	return nil
+}
+
+func DBDropPortalAddressIndices() error {
+	startTime := time.Now()
+	ctx, _ := context.WithTimeout(context.Background(), time.Duration(5)*DB_OPERATION_TIMEOUT)
+
+	_, err := mgm.Coll(&PortalShieldingData{}).Indexes().DropAll(ctx)
+	if err != nil {
+		logger.Printf("failed to drop all indices of index portal addresses\n")
+		return err
+	}
+	logger.Printf("Dropping indices succeeded after %v", time.Since(startTime))
 	return nil
 }
 
@@ -33,41 +45,46 @@ func DBCreatePortalAddressIndex() error {
 
 	coinMdl := []mongo.IndexModel{
 		{
-			Keys:    bsonx.Doc{{Key: "incaddress", Value: bsonx.Int32(1)}, {Key: "btcaddress", Value: bsonx.Int32(1)}},
+			Keys:    bsonx.Doc{{Key: "incaddress", Value: bsonx.Int32(1)}, {Key: "depositkey", Value: bsonx.Int32(1)}, {Key: "btcaddress", Value: bsonx.Int32(1)}},
 			Options: options.Index().SetUnique(true),
 		},
 		{
 			Keys: bsonx.Doc{{Key: "timestamp", Value: bsonx.Int32(1)}},
 		},
 	}
-	_, err := mgm.Coll(&PortalAddressData{}).Indexes().CreateMany(ctx, coinMdl)
+	_, err := mgm.Coll(&PortalShieldingData{}).Indexes().CreateMany(ctx, coinMdl)
 	if err != nil {
-		log.Printf("failed to index portal addresses in %v", time.Since(startTime))
+		logger.Printf("failed to index portal addresses in %v", time.Since(startTime))
 		return err
 	}
 
-	log.Printf("success index portal addresses in %v", time.Since(startTime))
+	logger.Printf("success index portal addresses in %v", time.Since(startTime))
 	return nil
 }
 
-func DBCheckPortalAddressExisted(incAddress, btcAddress string) (bool, error) {
+func DBCheckPortalShieldDataExisted(chainCode, btcAddress string, usePaymentAddress ...bool) (bool, error) {
 	startTime := time.Now()
 
-	filter := bson.M{"incaddress": bson.M{operator.Eq: incAddress}, "btcaddress": bson.M{operator.Eq: btcAddress}}
-	var result PortalAddressData
-	err := mgm.Coll(&PortalAddressData{}).First(filter, &result)
+	filter := bson.M{"depositkey": bson.M{operator.Eq: chainCode}, "btcaddress": bson.M{operator.Eq: btcAddress}}
+	if len(usePaymentAddress) > 0 && usePaymentAddress[0] {
+		filter = bson.M{"incaddress": bson.M{operator.Eq: chainCode}, "btcaddress": bson.M{operator.Eq: btcAddress}}
+	}
+	logger.Printf("filter: %v\n", filter)
+
+	var result PortalShieldingData
+	err := mgm.Coll(&PortalShieldingData{}).First(filter, &result)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
-			log.Printf("check portal address not existed in %v", time.Since(startTime))
+			logger.Printf("check portal address not existed in %v", time.Since(startTime))
 			return false, nil
 		}
 		return false, err
 	}
-	log.Printf("check portal address existed in %v", time.Since(startTime))
+	logger.Printf("check portal address existed in %v", time.Since(startTime))
 	return true, nil
 }
 
-func DBSavePortalAddress(item PortalAddressData) error {
+func DBSavePortalShieldingData(item PortalShieldingData) error {
 	startTime := time.Now()
 	ctx, _ := context.WithTimeout(context.Background(), time.Duration(5)*DB_OPERATION_TIMEOUT)
 
@@ -75,39 +92,42 @@ func DBSavePortalAddress(item PortalAddressData) error {
 	if err != nil {
 		return err
 	}
-	_, err = mgm.Coll(&PortalAddressData{}).InsertOne(ctx, item)
+	_, err = mgm.Coll(&PortalShieldingData{}).InsertOne(ctx, item)
 	if err != nil {
-		log.Printf("failed to insert portal address %v in %v", item, time.Since(startTime))
+		logger.Printf("failed to insert portal address %v in %v", item, time.Since(startTime))
 		return err
 	}
 
-	log.Printf("inserted portal address %v in %v", item, time.Since(startTime))
+	logger.Printf("inserted portal address %v in %v", item, time.Since(startTime))
 	return nil
 }
 
-func DBGetPortalAddressesByTimestamp(fromTimeStamp int64, toTimeStamp int64) ([]PortalAddressData, error) {
+func DBGetPortalAddressesByTimestamp(fromTimeStamp int64, toTimeStamp int64) ([]PortalShieldingData, error) {
 	startTime := time.Now()
-	list := []PortalAddressData{}
+	list := make([]PortalShieldingData, 0)
 	filter := bson.M{"timestamp": bson.M{operator.Gte: fromTimeStamp, operator.Lt: toTimeStamp}}
 
-	err := mgm.Coll(&PortalAddressData{}).SimpleFind(&list, filter)
+	err := mgm.Coll(&PortalShieldingData{}).SimpleFind(&list, filter)
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("found %v addresses in %v", len(list), time.Since(startTime))
+	logger.Printf("found %v records in %v", len(list), time.Since(startTime))
 
 	return list, nil
 }
 
-func DBGetBTCAddressByIncAddress(incAddress string) (string, error) {
+func DBGetBTCAddressByChainCode(chainCode string, usePaymentAddress ...bool) (string, error) {
 	startTime := time.Now()
 
-	filter := bson.M{"incaddress": bson.M{operator.Eq: incAddress}}
-	var result PortalAddressData
-	err := mgm.Coll(&PortalAddressData{}).First(filter, &result)
+	filter := bson.M{"depositkey": bson.M{operator.Eq: chainCode}}
+	if len(usePaymentAddress) > 0 && usePaymentAddress[0] {
+		filter = bson.M{"incaddress": bson.M{operator.Eq: chainCode}}
+	}
+	var result PortalShieldingData
+	err := mgm.Coll(&PortalShieldingData{}).First(filter, &result)
 	if err != nil {
 		return "", err
 	}
-	log.Printf("get btc address by inc address in %v", time.Since(startTime))
+	logger.Printf("get btc address by chainCode in %v", time.Since(startTime))
 	return result.BTCAddress, nil
 }

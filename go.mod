@@ -9,7 +9,7 @@ require (
 	github.com/gin-contrib/gzip v0.0.5
 	github.com/gin-gonic/gin v1.7.4
 	github.com/go-resty/resty/v2 v2.6.0
-	github.com/incognitochain/go-incognito-sdk-v2 v1.0.1-beta.0.20220407021847-5975eca99a0c
+	github.com/incognitochain/go-incognito-sdk-v2 v1.0.1-beta.0.20220407080921-470437b8d37b
 	github.com/json-iterator/go v1.1.10
 	github.com/kamva/mgm/v3 v3.4.1
 	github.com/klauspost/compress v1.10.10 // indirect

@@ -3,12 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcutil"
 	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
 	"github.com/kamva/mgm/v3"
@@ -16,7 +14,7 @@ import (
 )
 
 func startGinService() {
-	log.Println("initiating api-service...")
+	logger.Println("initiating api-service...")
 
 	r := gin.Default()
 	r.Use(gzip.Gzip(gzip.DefaultCompression))
@@ -30,54 +28,80 @@ func startGinService() {
 	r.POST("/addportalshieldingaddress", API_AddPortalShieldingAddress)
 	r.GET("/getlistportalshieldingaddress", API_GetListPortalShieldingAddress)
 	r.GET("/getestimatedunshieldingfee", API_GetEstimatedUnshieldingFee)
-	r.GET("/getshieldhistory", API_GetShieldHistory)
+	r.POST("/getshieldhistory", API_GetShieldHistory)
 	r.GET("/getshieldhistorybyexternaltxid", API_GetShieldHistoryByExternalTxID)
-	err := r.Run("0.0.0.0:" + strconv.Itoa(serviceCfg.APIPort))
+	err := r.Run("127.0.0.1:" + strconv.Itoa(serviceCfg.APIPort))
 	if err != nil {
 		panic(err)
 	}
 }
 
 func API_CheckPortalShieldingAddressExisted(c *gin.Context) {
-	incAddress := c.Query("incaddress")
-	btcAddress := c.Query("btcaddress")
+	prefix := "[CheckShieldAddressExisted]"
+	var req APICheckPortalShieldAddressExistedParams
+	err := c.BindQuery(&req)
+	if err != nil {
+		logger.Println(prefix, err)
+		c.JSON(http.StatusBadRequest, buildGinErrorRespond(err))
+		return
+	}
+
+	if isValid, err := req.IsValid(); !isValid || err != nil {
+		logger.Println(prefix, err)
+		c.JSON(http.StatusBadRequest, buildGinErrorRespond(err))
+		return
+	}
+
+	chainCode := req.OTDepositPubKey
+	if req.IncAddress != "" {
+		chainCode = req.IncAddress
+	}
 
 	// check unique
-	isExisted, err := DBCheckPortalAddressExisted(incAddress, btcAddress)
+	exists, err := DBCheckPortalShieldDataExisted(chainCode, req.BTCAddress, chainCode == req.IncAddress)
 	if err != nil {
+		logger.Println(prefix, err)
 		c.JSON(http.StatusInternalServerError, buildGinErrorRespond(err))
 		return
 	}
 
-	c.JSON(http.StatusOK, API_respond{
-		Result: isExisted,
+	c.JSON(http.StatusOK, APIResponse{
+		Result: exists,
 		Error:  nil,
 	})
 }
 
 func API_AddPortalShieldingAddress(c *gin.Context) {
-	var req API_add_portal_shielding_request
+	prefix := "[AddShieldAddress]"
+	var req APIAddPortalShieldingRequestParams
 	err := c.ShouldBindJSON(&req)
 	if err != nil {
+		logger.Println(prefix, err)
 		c.JSON(http.StatusBadRequest, buildGinErrorRespond(err))
 		return
 	}
 
-	err = isValidPortalAddressPair(req.IncAddress, req.BTCAddress)
-	if err != nil {
+	if isValid, err := req.IsValid(); !isValid || err != nil {
+		logger.Println(prefix, err)
 		c.JSON(http.StatusBadRequest, buildGinErrorRespond(err))
 		return
+	}
+
+	chainCode := req.OTDepositPubKey
+	if req.IncAddress != "" {
+		chainCode = req.IncAddress
 	}
 
 	// check unique
-	isExisted, err := DBCheckPortalAddressExisted(req.IncAddress, req.BTCAddress)
+	exists, err := DBCheckPortalShieldDataExisted(chainCode, req.BTCAddress, chainCode == req.IncAddress)
 	if err != nil {
+		logger.Println(prefix, err)
 		c.JSON(http.StatusInternalServerError, buildGinErrorRespond(err))
 		return
 	}
-	if isExisted {
-		msg := "Record has already been inserted"
-		c.JSON(http.StatusOK, API_respond{
+	if exists {
+		msg := "record has already been inserted"
+		c.JSON(http.StatusOK, APIResponse{
 			Result: nil,
 			Error:  &msg,
 		})
@@ -86,38 +110,48 @@ func API_AddPortalShieldingAddress(c *gin.Context) {
 
 	err = importBTCAddressToFullNode(req.BTCAddress)
 	if err != nil {
+		logger.Println(prefix, err)
 		c.JSON(http.StatusInternalServerError, buildGinErrorRespond(err))
 		return
 	}
 
-	item := NewPortalAddressData(req.IncAddress, req.BTCAddress)
-	err = DBSavePortalAddress(*item)
+	item := NewPortalAddressData(req)
+	err = DBSavePortalShieldingData(*item)
 	if err != nil {
+		logger.Println(prefix, err)
 		c.JSON(http.StatusInternalServerError, buildGinErrorRespond(err))
 		return
 	}
 
-	c.JSON(http.StatusOK, API_respond{
+	c.JSON(http.StatusOK, APIResponse{
 		Result: true,
 		Error:  nil,
 	})
 }
 
 func API_GetListPortalShieldingAddress(c *gin.Context) {
-	fromTimeStamp, err1 := strconv.ParseInt(c.Query("from"), 10, 64)
-	toTimeStamp, err2 := strconv.ParseInt(c.Query("to"), 10, 64)
-	if err1 != nil || err2 != nil {
-		c.JSON(http.StatusBadRequest, buildGinErrorRespond(fmt.Errorf("Invalid parameters")))
+	prefix := "[ListPortalShield]"
+	var req APIGetListPortalShieldingAddressParams
+	err := c.BindQuery(&req)
+	if err != nil {
+		logger.Println(prefix, err)
+		c.JSON(http.StatusBadRequest, buildGinErrorRespond(fmt.Errorf("invalid parameters")))
+		return
+	}
+	if isValid, err := req.IsValid(); !isValid || err != nil {
+		logger.Println(prefix, err)
+		c.JSON(http.StatusBadRequest, buildGinErrorRespond(err))
 		return
 	}
 
-	list, err := DBGetPortalAddressesByTimestamp(fromTimeStamp, toTimeStamp)
+	list, err := DBGetPortalAddressesByTimestamp(req.From, req.To)
 	if err != nil {
+		logger.Println(prefix, err)
 		c.JSON(http.StatusInternalServerError, buildGinErrorRespond(err))
 		return
 	}
 
-	c.JSON(http.StatusOK, API_respond{
+	c.JSON(http.StatusOK, APIResponse{
 		Result: list,
 		Error:  nil,
 	})
@@ -130,64 +164,71 @@ func API_GetEstimatedUnshieldingFee(c *gin.Context) {
 
 	feePerVByte, err := getBitcoinFee()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, buildGinErrorRespond(fmt.Errorf("Could not get bitcoin fee, error: %v", err)))
+		c.JSON(http.StatusInternalServerError, buildGinErrorRespond(fmt.Errorf("could not get bitcoin fee, error: %v", err)))
 		return
 	}
 	estimatedFee := feePerVByte * (2.0*vBytePerInput + 2.0*vBytePerOutput + vByteOverhead)
 	estimatedFee *= 1.15 // overpay
 
-	c.JSON(http.StatusOK, API_respond{
+	c.JSON(http.StatusOK, APIResponse{
 		Result: estimatedFee,
 		Error:  nil,
 	})
 }
 
 func API_GetShieldHistory(c *gin.Context) {
-	incAddress := c.Query("incaddress")
-	tokenID := c.Query("tokenid")
-	if tokenID != BTCTokenID {
+	prefix := "[GetShieldHistory]"
+	var req APIGetShieldHistoryParams
+	err := c.ShouldBindJSON(&req)
+	if err != nil {
+		logger.Println(prefix, err)
+		c.JSON(http.StatusBadRequest, buildGinErrorRespond(err))
+		return
+	}
+
+	if isValid, err := req.IsValid(); !isValid || err != nil {
+		logger.Println(prefix, err)
+		c.JSON(http.StatusBadRequest, buildGinErrorRespond(err))
+		return
+	}
+
+	if req.TokenID != BTCTokenID {
+		logger.Println(prefix, err)
 		c.JSON(http.StatusBadRequest, buildGinErrorRespond(fmt.Errorf(
-			"TokenID is not a portal token %v", tokenID)))
+			"TokenID is not a portal token %v", req.TokenID)))
 		return
 	}
 
-	btcAddressStr, err := DBGetBTCAddressByIncAddress(incAddress)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, buildGinErrorRespond(fmt.Errorf(
-			"Could not get btc address by inc address %v from DB", incAddress)))
+	// Handle old shielding procedure.
+	if req.IncAddress != "" {
+		h, err := getShieldHistoryForKey(req.IncAddress, true)
+		if err != nil {
+			logger.Println(prefix, err)
+			c.JSON(http.StatusInternalServerError, err)
+		} else {
+			c.JSON(http.StatusOK, APIResponse{
+				Result: h,
+				Error:  nil,
+			})
+		}
 		return
 	}
 
-	btcAddress, err := btcutil.DecodeAddress(btcAddressStr, BTCChainCfg)
-	if err != nil {
-		log.Printf(fmt.Sprintf("Could not decode address %v - with err: %v", btcAddressStr, err))
-		c.JSON(http.StatusInternalServerError, buildGinErrorRespond(
-			fmt.Errorf("Could not decode address %v - with err: %v", btcAddressStr, err)))
-		return
+	// Handle new shielding procedure with OTDepositPubKey's.
+	res := make(map[string][]PortalShieldHistory)
+	for _, depositPubKey := range req.OTDepositPubKeys {
+		h, err := getShieldHistoryForKey(depositPubKey)
+		if err != nil {
+			logger.Println(prefix, err)
+			c.JSON(http.StatusInternalServerError, fmt.Errorf("retrieving shielding history for key %v encountered "+
+				"an error: %v", depositPubKey, err))
+			return
+		}
+		res[depositPubKey] = h
 	}
 
-	// time1 := time.Now()
-	utxos, err := btcClient.ListUnspentMinMaxAddresses(BTCMinConf, BTCMaxConf, []btcutil.Address{btcAddress})
-	if err != nil {
-		log.Printf(fmt.Sprintf("Could not get utxos of address %v - with err: %v", btcAddressStr, err))
-		c.JSON(http.StatusInternalServerError, buildGinErrorRespond(
-			fmt.Errorf("Could not get utxos of address %v - with err: %v", btcAddressStr, err)))
-		return
-	}
-	// log.Printf("Time call api btc fullnode: %v\n", time.Since(time1))
-
-	// time2 := time.Now()
-	histories, err := ParseUTXOsToPortalShieldHistory(utxos, incAddress)
-	if err != nil {
-		log.Printf(fmt.Sprintf("Could not get histories from utxos of address %v - with err: %v", btcAddressStr, err))
-		c.JSON(http.StatusInternalServerError, buildGinErrorRespond(
-			fmt.Errorf("Could not get histories from utxos of address  %v - with err: %v", btcAddressStr, err)))
-		return
-	}
-	// log.Printf("Time parsing: %v\n", time.Since(time2))
-
-	c.JSON(http.StatusOK, API_respond{
-		Result: histories,
+	c.JSON(http.StatusOK, APIResponse{
+		Result: res,
 		Error:  nil,
 	})
 }
@@ -204,14 +245,14 @@ func API_GetShieldHistoryByExternalTxID(c *gin.Context) {
 	txIDHash, err := chainhash.NewHashFromStr(externalTxID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, buildGinErrorRespond(
-			fmt.Errorf("Invalid external txID %v - with err: %v", externalTxID, err)))
+			fmt.Errorf("invalid external txID %v - with err: %v", externalTxID, err)))
 		return
 	}
 
 	res, err := btcClient.GetTransaction(txIDHash)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, buildGinErrorRespond(
-			fmt.Errorf("Could not get external txID %v - with err: %v", externalTxID, err)))
+			fmt.Errorf("could not get external txID %v - with err: %v", externalTxID, err)))
 		return
 	}
 
@@ -221,7 +262,7 @@ func API_GetShieldHistoryByExternalTxID(c *gin.Context) {
 		Status:        status,
 		Confirmations: res.Confirmations,
 	}
-	c.JSON(http.StatusOK, API_respond{
+	c.JSON(http.StatusOK, APIResponse{
 		Result: history,
 		Error:  nil,
 	})
@@ -251,9 +292,9 @@ func API_HealthCheck(c *gin.Context) {
 	})
 }
 
-func buildGinErrorRespond(err error) *API_respond {
+func buildGinErrorRespond(err error) *APIResponse {
 	errStr := err.Error()
-	respond := API_respond{
+	respond := APIResponse{
 		Result: nil,
 		Error:  &errStr,
 	}

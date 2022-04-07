@@ -5,7 +5,6 @@ import (
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcutil"
-	"log"
 	"sync"
 )
 
@@ -54,29 +53,29 @@ func getStatusFromConfirmation(confirmationBlks int) (status int) {
 	return
 }
 
-func getShieldHistoryForKey(depositKey string, useOTDepositKey ...bool) ([]PortalShieldHistory, error) {
-	btcAddressStr, err := DBGetBTCAddressByIncAddress(depositKey, useOTDepositKey...)
+func getShieldHistoryForKey(chainCode string, usePaymentAddress ...bool) ([]PortalShieldHistory, error) {
+	btcAddressStr, err := DBGetBTCAddressByChainCode(chainCode, usePaymentAddress...)
 	if err != nil {
-		return nil, fmt.Errorf("could not get btc address by chainCode %v from DB", depositKey)
+		return nil, fmt.Errorf("could not get btc address by chainCode %v from DB", chainCode)
 	}
 
 	btcAddress, err := btcutil.DecodeAddress(btcAddressStr, BTCChainCfg)
 	if err != nil {
-		log.Printf(fmt.Sprintf("Could not decode address %v - with err: %v", btcAddressStr, err))
+		logger.Printf(fmt.Sprintf("Could not decode address %v - with err: %v", btcAddressStr, err))
 		return nil, fmt.Errorf("could not decode address %v - with err: %v", btcAddressStr, err)
 	}
 
 	// time1 := time.Now()
 	utxos, err := btcClient.ListUnspentMinMaxAddresses(BTCMinConf, BTCMaxConf, []btcutil.Address{btcAddress})
 	if err != nil {
-		log.Printf(fmt.Sprintf("could not get utxos of address %v - with err: %v", btcAddressStr, err))
+		logger.Printf(fmt.Sprintf("could not get utxos of address %v - with err: %v", btcAddressStr, err))
 		return nil, fmt.Errorf("could not get utxos of address %v - with err: %v", btcAddressStr, err)
 	}
 
 	// time2 := time.Now()
-	history, err := ParseUTXOsToPortalShieldHistory(utxos, depositKey, useOTDepositKey...)
+	history, err := ParseUTXOsToPortalShieldHistory(utxos, chainCode, usePaymentAddress...)
 	if err != nil {
-		log.Printf(fmt.Sprintf("could not get history from utxos of address %v - with err: %v", btcAddressStr, err))
+		logger.Printf(fmt.Sprintf("could not get history from utxos of address %v - with err: %v", btcAddressStr, err))
 		return nil, fmt.Errorf("could not get history from utxos of address  %v - with err: %v", btcAddressStr, err)
 	}
 
@@ -84,7 +83,7 @@ func getShieldHistoryForKey(depositKey string, useOTDepositKey ...bool) ([]Porta
 }
 
 func ParseUTXOsToPortalShieldHistory(
-	utxos []btcjson.ListUnspentResult, depositKey string, useOTDepositKey ...bool,
+	utxos []btcjson.ListUnspentResult, depositKey string, usePaymentAddress ...bool,
 ) ([]PortalShieldHistory, error) {
 	histories := make([]PortalShieldHistory, 0)
 
@@ -98,12 +97,12 @@ func ParseUTXOsToPortalShieldHistory(
 			status := getStatusFromConfirmation(int(u.Confirmations))
 			txIDHash, err := chainhash.NewHashFromStr(u.TxID)
 			if err != nil {
-				log.Printf("Could not new hash from external tx id %v - Error %v\n", u.TxID, err)
+				logger.Printf("Could not new hash from external tx id %v - Error %v\n", u.TxID, err)
 				return
 			}
 			tx, err := btcClient.GetTransaction(txIDHash)
 			if err != nil {
-				log.Printf("Could not get external tx id %v - Error %v\n", u.TxID, err)
+				logger.Printf("Could not get external tx id %v - Error %v\n", u.TxID, err)
 				return
 			}
 
@@ -114,10 +113,10 @@ func ParseUTXOsToPortalShieldHistory(
 				Time:          tx.Time * 1000, // convert to msec
 				Confirmations: u.Confirmations,
 			}
-			if len(useOTDepositKey) > 0 && useOTDepositKey[0] {
-				h.DepositPubKey = depositKey
-			} else {
+			if len(usePaymentAddress) > 0 && usePaymentAddress[0] {
 				h.IncognitoAddress = depositKey
+			} else {
+				h.DepositPubKey = depositKey
 			}
 			result <- h
 		}()

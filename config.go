@@ -2,11 +2,9 @@ package main
 
 import (
 	"flag"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/incognitochain/go-incognito-sdk-v2/incclient"
 	"io/ioutil"
-	"log"
-
-	"github.com/btcsuite/btcd/chaincfg"
 )
 
 var ENABLE_PROFILER bool
@@ -34,7 +32,7 @@ type Config struct {
 func readConfigAndArg() {
 	data, err := ioutil.ReadFile("./cfg.json")
 	if err != nil {
-		log.Println(err)
+		logger.Println(err)
 		// return
 	}
 	var tempCfg Config
@@ -75,4 +73,5 @@ func readConfigAndArg() {
 	}
 	ENABLE_PROFILER = *argProfiler
 	serviceCfg = tempCfg
+	logger = InitLogger()
 }

@@ -20,22 +20,22 @@ type APIAddPortalShieldingRequestParams struct {
 	// IncAddress is an Incognito payment address associated with the shielding request. It is used in the
 	// old shielding procedure in which BTCAddress is repeated for every shielding request of the same IncAddress.
 	// Either IncAddress or OTDepositPubKey must be non-empty.
-	IncAddress string `json:"IncAddress,omitempty"`
+	IncAddress string `json:"IncAddress,omitempty" form:"IncAddress,omitempty"`
 
 	// OTDepositPubKey is a one-time depositing public key associated with the shielding request. It is used to replace
 	// the old shielding procedure and provides better privacy level.
 	// Either IncAddress or OTDepositPubKey must be non-empty.
-	OTDepositPubKey string `json:"OTDepositPubKey,omitempty"`
+	OTDepositPubKey string `json:"OTDepositPubKey,omitempty" form:"OTDepositPubKey,omitempty"`
 
 	// Receivers is a list of OTAReceivers for receiving the shielding assets.
-	Receivers []string `json:"Receivers,omitempty"`
+	Receivers []string `json:"Receivers,omitempty" form:"Receivers,omitempty"`
 
 	// Signatures is a list of valid signatures signed on each OTAReceiver against the OTDepositPubKey.
-	Signatures []string `json:"Signatures,omitempty"`
+	Signatures []string `json:"Signatures,omitempty" form:"Signatures,omitempty"`
 
 	// BTCAddress is the multi-sig address for receiving public token. It is generated based on either IncAddress or
 	// OTDepositPubKey.
-	BTCAddress string
+	BTCAddress string `json:"BTCAddress" form:"BTCAddress"`
 }
 
 func (p APIAddPortalShieldingRequestParams) IsValid() (bool, error) {
@@ -114,18 +114,59 @@ type APIGetShieldHistoryParams struct {
 	// IncAddress is an Incognito payment address associated with the shielding request. It is used in the
 	// old shielding procedure in which BTCAddress is repeated for every shielding request of the same IncAddress.
 	// Either IncAddress or OTDepositPubKey must be non-empty.
-	IncAddress string `json:"incaddress,omitempty"`
+	IncAddress string `json:"IncAddress,omitempty" form:"IncAddress,omitempty"`
 
 	// OTDepositPubKeys is a list of one-time depositing public keys.
-	OTDepositPubKeys []string `json:"depositpubkeys,omitempty"`
+	OTDepositPubKeys []string `json:"OTDepositPubKeys,omitempty" form:"OTDepositPubKeys,omitempty"`
 
 	// TokenID is the ID of the token in need of retrieval.
-	TokenID string `json:"tokenid"`
+	TokenID string `json:"TokenID" form:"TokenID"`
 }
 
 func (p APIGetShieldHistoryParams) IsValid() (bool, error) {
 	if p.IncAddress == "" && len(p.OTDepositPubKeys) == 0 {
 		return false, fmt.Errorf("either `incaddress` or `depositpubkeys` must be supplied")
+	}
+
+	return true, nil
+}
+
+// APICheckPortalShieldAddressExistedParams represents a list of parameters for the `checkportalshieldingaddressexisted` api.
+// A valid request must satisfy the condition in which either IncAddress or OTDepositPubKeys must be non-empty.
+type APICheckPortalShieldAddressExistedParams struct {
+	// IncAddress is an Incognito payment address associated with the shielding request. It is used in the
+	// old shielding procedure in which BTCAddress is repeated for every shielding request of the same IncAddress.
+	// Either IncAddress or OTDepositPubKey must be non-empty.
+	IncAddress string `json:"incaddress,omitempty" form:"incaddress,omitempty"`
+
+	// OTDepositPubKeys is a list of one-time depositing public keys.
+	OTDepositPubKey string `json:"depositpubkey,omitempty" form:"depositpubkey,omitempty"`
+
+	// BTCAddress is the multi-sig address for receiving public token. It is generated based on either IncAddress or
+	// OTDepositPubKey.
+	BTCAddress string `json:"btcaddress" form:"btcaddress"`
+}
+
+func (p APICheckPortalShieldAddressExistedParams) IsValid() (bool, error) {
+	if p.IncAddress == "" && p.OTDepositPubKey == "" {
+		return false, fmt.Errorf("either `incaddress` or `depositpubkey` must be supplied")
+	}
+	if p.BTCAddress == "" {
+		return false, fmt.Errorf("`btcaddress` must be supplied")
+	}
+
+	return true, nil
+}
+
+// APIGetListPortalShieldingAddressParams represents a list of parameters for the `getlistportalshieldingaddress` api.
+type APIGetListPortalShieldingAddressParams struct {
+	From int64 `json:"from" form:"from"`
+	To   int64 `json:"to" form:"to"`
+}
+
+func (p APIGetListPortalShieldingAddressParams) IsValid() (bool, error) {
+	if p.From == 0 || p.To == 0 || p.From > p.To {
+		return false, fmt.Errorf("invalid interval")
 	}
 
 	return true, nil
