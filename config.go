@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"github.com/incognitochain/go-incognito-sdk-v2/incclient"
 	"io/ioutil"
 	"log"
 
@@ -12,6 +13,7 @@ var ENABLE_PROFILER bool
 var serviceCfg Config
 var BTCChainCfg *chaincfg.Params
 var BTCTokenID string
+var incClient *incclient.IncClient
 
 type BTCFullnodeConfig struct {
 	Address  string `json:"address"`
@@ -57,9 +59,17 @@ func readConfigAndArg() {
 	if tempCfg.Net == "test" {
 		BTCChainCfg = &chaincfg.TestNet3Params
 		BTCTokenID = TESTNET_BTC_ID
+		incClient, err = incclient.NewTestNetClient()
+		if err != nil {
+			panic(err)
+		}
 	} else if tempCfg.Net == "main" {
 		BTCChainCfg = &chaincfg.MainNetParams
 		BTCTokenID = MAINNET_BTC_ID
+		incClient, err = incclient.NewMainNetClient()
+		if err != nil {
+			panic(err)
+		}
 	} else {
 		panic("Invalid config network Bitcoin")
 	}
