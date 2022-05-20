@@ -165,7 +165,7 @@ type APIGetListPortalShieldingAddressParams struct {
 }
 
 func (p APIGetListPortalShieldingAddressParams) IsValid() (bool, error) {
-	if p.From == 0 || p.To == 0 || p.From > p.To {
+	if p.To == 0 || p.From > p.To {
 		return false, fmt.Errorf("invalid interval")
 	}
 

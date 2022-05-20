@@ -20,9 +20,11 @@ type PortalShieldingData struct {
 	OTDepositPubKey string `json:"depositkey,omitempty" bson:"depositkey,omitempty"`
 
 	// Receivers is a list of OTAReceivers for receiving the shielding assets.
+	// It is only used with OTDepositPubKey.
 	Receivers []string `json:"receivers,omitempty" bson:"receivers,omitempty"`
 
 	// Signatures is a list of valid signatures signed on each OTAReceiver against the OTDepositPubKey.
+	// It is only used with OTDepositPubKey.
 	Signatures []string `json:"signatures,omitempty" bson:"signatures,omitempty"`
 
 	// BTCAddress is the multi-sig address for receiving public token. It is generated based on either IncAddress or
