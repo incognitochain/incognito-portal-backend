@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcutil"
@@ -55,9 +57,41 @@ func API_CheckPortalShieldingAddressExisted(c *gin.Context) {
 	})
 }
 
+// authorize checks whether access token is valid (exists, is not expired and does not reach rate limit)
+func authorize(c *gin.Context, apiName string) (string, error) {
+	// extract access token from header
+	r := c.Request
+	accessTokenValue := r.Header.Get("Authorization")
+	splitToken := strings.Split(accessTokenValue, "Bearer ")
+	if len(splitToken) != 2 {
+		return "", errors.New("Access token format is invalid")
+	}
+	accessToken := splitToken[1]
+
+	// check access token is valid
+	res, err := getNumReqsByAPI(apiName, accessToken)
+	if err != nil {
+		return accessToken, err
+	}
+	if res.TotalReqs >= res.MaxReqs {
+		return accessToken, errors.New("Reach maximum request!")
+	}
+
+	return accessToken, nil
+
+}
+
 func API_AddPortalShieldingAddress(c *gin.Context) {
 	var req API_add_portal_shielding_request
 	err := c.ShouldBindJSON(&req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, buildGinErrorRespond(err))
+		return
+	}
+	apiName := "req-portal-shield-address"
+
+	// validate authenticator
+	accessTokenValue, err := authorize(c, apiName)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, buildGinErrorRespond(err))
 		return
@@ -81,6 +115,13 @@ func API_AddPortalShieldingAddress(c *gin.Context) {
 			Result: nil,
 			Error:  &msg,
 		})
+		return
+	}
+
+	// increase number of reqs for access token
+	_, err = increaseNumReqsByAPI(apiName, accessTokenValue)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, buildGinErrorRespond(err))
 		return
 	}
 

@@ -9,5 +9,7 @@
 		"https": false
 	},
 	"blockchainfee":"http://127.0.0.1:9001",
+	"backendservice": "",
+	"backendkey": "",
 	"net": "main"
 }
